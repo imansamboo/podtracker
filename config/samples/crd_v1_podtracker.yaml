@@ -1,0 +1,9 @@
+apiVersion: crd.devops.toolbox/v1
+kind: PodTracker
+metadata:
+  labels:
+    app.kubernetes.io/name: controller
+    app.kubernetes.io/managed-by: kustomize
+  name: podtracker-sample
+spec:
+  # TODO(user): Add fields here
