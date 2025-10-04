@@ -19,10 +19,14 @@ package controller
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	crdv1 "devops.toolbox/controller/api/v1"
 )
@@ -47,7 +51,8 @@ type PodTrackerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	logger := logf.FromContext(ctx)
+	logger.Info("pod tracker trigged")
 
 	// TODO(user): your logic here
 
@@ -60,4 +65,34 @@ func (r *PodTrackerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&crdv1.PodTracker{}).
 		Named("podtracker").
 		Complete(r)
+}
+
+func (r *PodTrackerReconciler) HandlePodEvents(pod client.Object) []reconcile.Request {
+	log.Log.V(1).Info(pod.GetNamespace())
+	if pod.GetNamespace() != "default" {
+		return []reconcile.Request{}
+	}
+	namespacedNames := types.NamespacedName{
+		Namespace: pod.GetNamespace(),
+		Name:      pod.GetName(),
+	}
+	var podObject corev1.Pod
+	err := r.Get(context.Background(), namespacedNames, &podObject)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+	if len(podObject.Annotations) == 0 {
+		log.Log.V(1).Info("no annotaion set")
+	} else if podObject.GetAnnotations()["exampleannotation"] == "crd.devops.toolbox" {
+		log.Log.V(1).Info("found a manager", podObject.Name)
+	} else {
+		return []reconcile.Request{}
+	}
+	podObject.SetAnnotations(map[string]string{
+		"exampleAnnotation": "crd.devops.toolbox",
+	})
+	if err = r.Update(context.TODO(), &podObject); err != nil {
+		log.Log.V(1).Info("error occured in update action")
+	}
+	return []reconcile.Request{}
 }

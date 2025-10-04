@@ -20,8 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+type Reporter struct {
+	Kind    string `json:"kind,omitempty"`
+	Key     string `json:"key,omitempty"`
+	Channel string `json:"channel,omitempty"`
+}
 
 // PodTrackerSpec defines the desired state of PodTracker
 type PodTrackerSpec struct {
@@ -32,7 +35,8 @@ type PodTrackerSpec struct {
 
 	// foo is an example field of PodTracker. Edit podtracker_types.go to remove/update
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Name     string   `json:"name,omitempty"`
+	Reporter Reporter `json:"reporter,omitempty"`
 }
 
 // PodTrackerStatus defines the observed state of PodTracker.
@@ -55,7 +59,7 @@ type PodTrackerStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -67,7 +71,7 @@ type PodTracker struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec defines the desired state of PodTracker
 	// +required
@@ -75,7 +79,7 @@ type PodTracker struct {
 
 	// status defines the observed state of PodTracker
 	// +optional
-	Status PodTrackerStatus `json:"status,omitempty,omitzero"`
+	Status PodTrackerStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

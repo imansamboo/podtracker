@@ -1,0 +1,10 @@
+apiVersion: crd.devops.toolbox/v1
+kind: PodTracker
+metadata:
+  name: podtracker-sample
+spec:
+  name: "test-podtracker"
+  reporter:
+    kind: "slack2"
+    key: "auth-token"
+    channel: "#alerts"
