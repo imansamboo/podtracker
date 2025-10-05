@@ -5,6 +5,13 @@ metadata:
 spec:
   name: "test-podtracker"
   reporter:
-    kind: "slack2"
-    key: "auth-token"
-    channel: "#alerts"
+    kind: "logstash"
+    key: "parspooyesh"
+    channel: "registry.parspooyesh.net/elasticsearch"
+status:
+  conditions:
+    - type: "PodAvailable"
+      status: "False"
+      reason: "Initializing"
+      message: "Pod is being created"
+      lastTransitionTime: "2025-10-05T08:00:00Z"

@@ -18,17 +18,23 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	crdv1 "devops.toolbox/controller/api/v1"
+	appsv1 "k8s.io/api/apps/v1"
 )
 
 // PodTrackerReconciler reconciles a PodTracker object
@@ -51,12 +57,113 @@ type PodTrackerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := logf.FromContext(ctx)
-	logger.Info("pod tracker trigged")
+	log := ctrl.LoggerFrom(ctx)
 
-	// TODO(user): your logic here
+	var tracker crdv1.PodTracker
+	if err := r.Get(ctx, req.NamespacedName, &tracker); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
+	reporter := tracker.Spec.Reporter
+	image := fmt.Sprintf("%s/%s:%s", reporter.Channel, reporter.Kind, reporter.Key)
+	deployName := tracker.Name + "-deployment"
+
+	log.Info("Ensuring deployment exists", "image", image)
+
+	// Build desired Deployment
+	deploy := r.desiredDeployment(&tracker, deployName, image)
+
+	var existing appsv1.Deployment
+	err := r.Get(ctx, types.NamespacedName{Name: deployName, Namespace: tracker.Namespace}, &existing)
+	if apierrors.IsNotFound(err) {
+		log.Info("Creating new deployment", "name", deployName)
+		if err := r.Create(ctx, deploy); err != nil {
+			return ctrl.Result{}, err
+		}
+	} else if err == nil {
+		// Optional: compare spec and update if changed
+		if !reflect.DeepEqual(existing.Spec.Template.Spec.Containers[0].Image, image) {
+			existing.Spec.Template.Spec.Containers[0].Image = image
+			if err := r.Update(ctx, &existing); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	} else {
+		return ctrl.Result{}, err
+	}
+
+	// Now monitor Deployment’s Pod status
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, client.InNamespace(tracker.Namespace), client.MatchingLabels{"app": deployName}); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if len(pods.Items) == 0 {
+		log.Info("No pods yet; requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	pod := pods.Items[0]
+	podPhase := pod.Status.Phase
+	log.Info("Pod phase", "phase", podPhase)
+
+	// Prepare a condition representing the current Pod state
+	var cond metav1.Condition
+
+	switch podPhase {
+	case corev1.PodPending:
+		cond = metav1.Condition{
+			Type:               "Progressing",
+			Status:             metav1.ConditionTrue,
+			Reason:             "PodPending",
+			Message:            "Pod is waiting for image pull or scheduling",
+			LastTransitionTime: metav1.Now(),
+		}
+
+	case corev1.PodRunning:
+		cond = metav1.Condition{
+			Type:               "Available",
+			Status:             metav1.ConditionTrue,
+			Reason:             "PodRunning",
+			Message:            "Pod is running successfully",
+			LastTransitionTime: metav1.Now(),
+		}
+
+	case corev1.PodFailed:
+		cond = metav1.Condition{
+			Type:               "Degraded",
+			Status:             metav1.ConditionTrue,
+			Reason:             "PodFailed",
+			Message:            "Pod failed to start or crashed",
+			LastTransitionTime: metav1.Now(),
+		}
+
+	default:
+		cond = metav1.Condition{
+			Type:               "Unknown",
+			Status:             metav1.ConditionUnknown,
+			Reason:             "UnknownPhase",
+			Message:            fmt.Sprintf("Pod is in phase %s", podPhase),
+			LastTransitionTime: metav1.Now(),
+		}
+	}
+
+	// Update the condition (replace or append)
+	meta.SetStatusCondition(&tracker.Status.Conditions, cond)
+
+	// Update CRD status
+	if err := r.Status().Update(ctx, &tracker); err != nil {
+		log.Error(err, "Failed to update PodTracker status")
+	}
+
+	// Requeue while still progressing
+	if cond.Type == "Progressing" {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	log.Info("Pod reached stable condition", "condition", cond.Type)
 	return ctrl.Result{}, nil
+
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -95,4 +202,33 @@ func (r *PodTrackerReconciler) HandlePodEvents(pod client.Object) []reconcile.Re
 		log.Log.V(1).Info("error occured in update action")
 	}
 	return []reconcile.Request{}
+}
+
+func (r *PodTrackerReconciler) desiredDeployment(tracker *crdv1.PodTracker, name, image string) *appsv1.Deployment {
+	labels := map[string]string{"app": name}
+
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: tracker.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(tracker, crdv1.GroupVersion.WithKind("PodTracker")),
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "tracked-container",
+						Image: image,
+					}},
+				},
+			},
+		},
+	}
 }

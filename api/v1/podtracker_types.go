@@ -59,7 +59,8 @@ type PodTrackerStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	// Conditions []metav1.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Phase string `json:"phase,omitempty"`
 }
 
 // +kubebuilder:object:root=true
