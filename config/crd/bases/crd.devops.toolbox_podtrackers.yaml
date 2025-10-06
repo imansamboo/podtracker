@@ -39,19 +39,21 @@ spec:
           spec:
             description: spec defines the desired state of PodTracker
             properties:
+              ImageSpec:
+                properties:
+                  image:
+                    type: string
+                  repository:
+                    type: string
+                  token:
+                    type: string
+                  version:
+                    type: string
+                type: object
               name:
                 description: foo is an example field of PodTracker. Edit podtracker_types.go
                   to remove/update
                 type: string
-              reporter:
-                properties:
-                  channel:
-                    type: string
-                  key:
-                    type: string
-                  kind:
-                    type: string
-                type: object
             type: object
           status:
             description: status defines the observed state of PodTracker

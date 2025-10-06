@@ -20,10 +20,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type Reporter struct {
-	Kind    string `json:"kind,omitempty"`
-	Key     string `json:"key,omitempty"`
-	Channel string `json:"channel,omitempty"`
+type ImageSpec struct {
+	Image      string `json:"image,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Repository string `json:"repository,omitempty"`
+	Token      string `json:"token,omitempty"`
 }
 
 // PodTrackerSpec defines the desired state of PodTracker
@@ -35,8 +36,8 @@ type PodTrackerSpec struct {
 
 	// foo is an example field of PodTracker. Edit podtracker_types.go to remove/update
 	// +optional
-	Name     string   `json:"name,omitempty"`
-	Reporter Reporter `json:"reporter,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	ImageSpec ImageSpec `json:"ImageSpec,omitempty"`
 }
 
 // PodTrackerStatus defines the observed state of PodTracker.

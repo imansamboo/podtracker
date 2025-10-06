@@ -4,10 +4,11 @@ metadata:
   name: podtracker-sample
 spec:
   name: "test-podtracker"
-  reporter:
-    kind: "logstash"
-    key: "parspooyesh"
-    channel: "registry.parspooyesh.net/elasticsearch"
+  ImageSpec:
+    image: "elasticsearch/kibana"
+    version: "parspooyesh"
+    repository: "registry.parspooyesh.net"
+    token: "my_valid_token2"
 status:
   conditions:
     - type: "PodAvailable"

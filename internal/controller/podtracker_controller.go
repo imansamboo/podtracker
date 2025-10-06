@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,9 +65,16 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	reporter := tracker.Spec.Reporter
-	image := fmt.Sprintf("%s/%s:%s", reporter.Channel, reporter.Kind, reporter.Key)
-	deployName := tracker.Name + "-deployment"
+	imageSpec := tracker.Spec.ImageSpec
+	image := fmt.Sprintf("%s/%s:%s", imageSpec.Repository, imageSpec.Image, imageSpec.Version)
+	imagePath := strings.Split(imageSpec.Image, "/")
+	var deployName string
+	if len(imagePath) > 0 {
+		deployName = imagePath[len(imagePath)-1]
+	} else {
+		return ctrl.Result{}, client.IgnoreNotFound(fmt.Errorf("no image found in your request"))
+	}
+	deployName = deployName + "-deployment"
 
 	log.Info("Ensuring deployment exists", "image", image)
 
