@@ -261,6 +261,7 @@ type TokenState struct {
 
 func sendStatusToGin(token, status string) error {
 	url := "http://gin-service.default.svc.cluster.local:5000/update-state" // use k8s service name in-cluster
+	url = "http://192.168.49.2:30137/update-state"
 	payload := TokenState{
 		Token:  token,
 		Status: status,
