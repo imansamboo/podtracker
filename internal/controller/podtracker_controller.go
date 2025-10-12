@@ -17,8 +17,11 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -117,9 +120,11 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// Prepare a condition representing the current Pod state
 	var cond metav1.Condition
+	var status string
 
 	switch podPhase {
 	case corev1.PodPending:
+		status = "pending"
 		cond = metav1.Condition{
 			Type:               "Progressing",
 			Status:             metav1.ConditionTrue,
@@ -129,6 +134,7 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 	case corev1.PodRunning:
+		status = "running"
 		cond = metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionTrue,
@@ -138,6 +144,7 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 	case corev1.PodFailed:
+		status = "failed"
 		cond = metav1.Condition{
 			Type:               "Degraded",
 			Status:             metav1.ConditionTrue,
@@ -147,6 +154,7 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 	default:
+		status = "unknown"
 		cond = metav1.Condition{
 			Type:               "Unknown",
 			Status:             metav1.ConditionUnknown,
@@ -154,6 +162,11 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			Message:            fmt.Sprintf("Pod is in phase %s", podPhase),
 			LastTransitionTime: metav1.Now(),
 		}
+	}
+	if err := sendStatusToGin(tracker.Spec.ImageSpec.Token, status); err != nil {
+		log.Error(err, "Failed to send status to Gin service")
+	} else {
+		log.Info(fmt.Sprintf("Pod status sent token=%s and status=%s", tracker.Spec.ImageSpec.Token, status))
 	}
 
 	// Update the condition (replace or append)
@@ -239,4 +252,34 @@ func (r *PodTrackerReconciler) desiredDeployment(tracker *crdv1.PodTracker, name
 			},
 		},
 	}
+}
+
+type TokenState struct {
+	Token  string `json:"token" example:"abcdef12345"`
+	Status string `json:"status" example:"active"`
+}
+
+func sendStatusToGin(token, status string) error {
+	url := "http://gin-service.default.svc.cluster.local:5000/update-state" // use k8s service name in-cluster
+	payload := TokenState{
+		Token:  token,
+		Status: status,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update token, status code: %d", resp.StatusCode)
+	}
+
+	return nil
 }
