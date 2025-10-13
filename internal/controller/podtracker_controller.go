@@ -69,7 +69,14 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	imageSpec := tracker.Spec.ImageSpec
-	image := fmt.Sprintf("%s/%s:%s", imageSpec.Repository, imageSpec.Image, imageSpec.Version)
+	var image string
+	if imageSpec.Repository != "" {
+		image = fmt.Sprintf("%s/%s:%s", imageSpec.Repository, imageSpec.Image, imageSpec.Version)
+
+	} else {
+		image = fmt.Sprintf("%s:%s", imageSpec.Image, imageSpec.Version)
+
+	}
 	imagePath := strings.Split(imageSpec.Image, "/")
 	var deployName string
 	if len(imagePath) > 0 {
@@ -115,54 +122,111 @@ func (r *PodTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	pod := pods.Items[0]
-	podPhase := pod.Status.Phase
-	log.Info("Pod phase", "phase", podPhase)
+	if len(pod.Status.ContainerStatuses) == 0 {
+		log.Info("No container status yet; requeueing")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
 
-	// Prepare a condition representing the current Pod state
-	var cond metav1.Condition
+	cs := pod.Status.ContainerStatuses[0]
+	state := cs.State
+	podImage := cs.Image
+	imageID := cs.ImageID
+
 	var status string
+	var cond metav1.Condition
 
-	switch podPhase {
-	case corev1.PodPending:
-		status = "pending"
-		cond = metav1.Condition{
-			Type:               "Progressing",
-			Status:             metav1.ConditionTrue,
-			Reason:             "PodPending",
-			Message:            "Pod is waiting for image pull or scheduling",
-			LastTransitionTime: metav1.Now(),
+	if state.Waiting != nil {
+		reason := state.Waiting.Reason
+		switch reason {
+		case "ErrImagePull", "ImagePullBackOff":
+			status = "image_pull_failed"
+			cond = metav1.Condition{
+				Type:               "Degraded",
+				Status:             metav1.ConditionTrue,
+				Reason:             reason,
+				Message:            fmt.Sprintf("Image pull failed for %s: %s", podImage, state.Waiting.Message),
+				LastTransitionTime: metav1.Now(),
+			}
+		case "ContainerCreating":
+			status = "image_pulling"
+			cond = metav1.Condition{
+				Type:               "Progressing",
+				Status:             metav1.ConditionTrue,
+				Reason:             reason,
+				Message:            fmt.Sprintf("Image %s is being pulled", podImage),
+				LastTransitionTime: metav1.Now(),
+			}
+		default:
+			status = strings.ToLower(reason)
+			cond = metav1.Condition{
+				Type:               "Progressing",
+				Status:             metav1.ConditionTrue,
+				Reason:             reason,
+				Message:            fmt.Sprintf("Container is waiting: %s", reason),
+				LastTransitionTime: metav1.Now(),
+			}
 		}
-
-	case corev1.PodRunning:
-		status = "running"
+	} else if state.Running != nil {
+		status = "image_running"
 		cond = metav1.Condition{
 			Type:               "Available",
 			Status:             metav1.ConditionTrue,
-			Reason:             "PodRunning",
-			Message:            "Pod is running successfully",
+			Reason:             "ContainerRunning",
+			Message:            fmt.Sprintf("Image %s is running (ID: %s)", podImage, imageID),
 			LastTransitionTime: metav1.Now(),
 		}
+	} else if state.Terminated != nil {
+		term := state.Terminated
+		exitCode := term.ExitCode
+		reason := term.Reason
+		msg := term.Message
+		started := term.StartedAt
+		finished := term.FinishedAt
 
-	case corev1.PodFailed:
-		status = "failed"
+		// Default assumption: image pulled successfully, container exited
+		status = "container_terminated"
+
+		// Differentiate specific causes
+		if reason == "Completed" && exitCode == 0 {
+			status = "completed"
+		} else if reason == "Error" || exitCode != 0 {
+			status = "runtime_error"
+		} else if strings.Contains(reason, "OOM") {
+			status = "oom_killed"
+		}
+
 		cond = metav1.Condition{
-			Type:               "Degraded",
-			Status:             metav1.ConditionTrue,
-			Reason:             "PodFailed",
-			Message:            "Pod failed to start or crashed",
+			Type:   "Degraded",
+			Status: metav1.ConditionTrue,
+			Reason: reason,
+			Message: fmt.Sprintf(
+				"Container for image %s terminated (exitCode=%d, reason=%s, msg=%s, started=%s, finished=%s)",
+				cs.Image, exitCode, reason, msg, started.Format(time.RFC3339), finished.Format(time.RFC3339),
+			),
 			LastTransitionTime: metav1.Now(),
 		}
 
-	default:
+		log.Info("Container terminated",
+			"image", cs.Image,
+			"exitCode", exitCode,
+			"reason", reason,
+			"message", msg,
+			"started", started,
+			"finished", finished,
+		)
+	} else {
 		status = "unknown"
 		cond = metav1.Condition{
 			Type:               "Unknown",
 			Status:             metav1.ConditionUnknown,
-			Reason:             "UnknownPhase",
-			Message:            fmt.Sprintf("Pod is in phase %s", podPhase),
+			Reason:             "UnknownState",
+			Message:            fmt.Sprintf("Unknown image state for %s", podImage),
 			LastTransitionTime: metav1.Now(),
 		}
 	}
+
+	log.Info("Image state", "image", podImage, "status", status, "imageID", imageID)
+
 	if err := sendStatusToGin(tracker.Spec.ImageSpec.Token, status); err != nil {
 		log.Error(err, "Failed to send status to Gin service")
 	} else {
@@ -261,7 +325,7 @@ type TokenState struct {
 
 func sendStatusToGin(token, status string) error {
 	url := "http://gin-service.default.svc.cluster.local:5000/update-state" // use k8s service name in-cluster
-	url = "http://192.168.49.2:30137/update-state"
+	url = "http://192.168.49.2:30056/update-state"
 	payload := TokenState{
 		Token:  token,
 		Status: status,
