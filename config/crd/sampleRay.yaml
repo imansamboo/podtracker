@@ -1,0 +1,67 @@
+
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: rayservice-sample
+spec:
+  # Optional but helpful while debugging:
+  # serviceUnhealthySecondThreshold: 1800
+  # deploymentUnhealthySecondThreshold: 900
+
+  serveConfigV2: |
+    proxy_location: EveryNode
+    http_options:
+      host: 0.0.0.0
+      port: 8000
+    applications:
+      - name: text_ml_app
+        import_path: text_ml:app
+        route_prefix: /summarize_translate
+        deployments:
+          - name: Translator
+            num_replicas: 1
+            ray_actor_options:
+              num_cpus: 0.1
+            user_config:
+              language: french
+          - name: Summarizer
+            num_replicas: 1
+            ray_actor_options:
+              num_cpus: 0.1
+
+  rayClusterConfig:
+    rayVersion: "2.6.3"   # keep in sync with your image
+    headGroupSpec:
+      rayStartParams:
+        # Keep head free of Serve replicas (official guidance for HA patterns)
+        num-cpus: "0"
+      template:
+        spec:
+          containers:
+          - name: ray-head
+            image: proxy.ai-lab.ir/infra/summerizetranslate:v0.2.2
+            resources:
+              requests:
+                cpu: "1"
+                memory: "2Gi"
+              limits:
+                cpu: "1"
+                memory: "2Gi"
+    workerGroupSpecs:
+    - groupName: small-group
+      replicas: 2
+      minReplicas: 1
+      maxReplicas: 5
+      rayStartParams: {}
+      template:
+        spec:
+          containers:
+          - name: ray-worker
+            image: proxy.ai-lab.ir/infra/summerizetranslate:v0.2.2
+            resources:
+              requests:
+                cpu: "500m"
+                memory: "2Gi"
+              limits:
+                cpu: "1"
+                memory: "2Gi"
