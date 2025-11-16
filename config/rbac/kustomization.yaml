@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the controller itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- raytracker_admin_role.yaml
+- raytracker_editor_role.yaml
+- raytracker_viewer_role.yaml
 - podtracker_admin_role.yaml
 - podtracker_editor_role.yaml
 - podtracker_viewer_role.yaml

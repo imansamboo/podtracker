@@ -1,4 +1,5 @@
 ## Append samples of your project ##
 resources:
 - crd_v1_podtracker.yaml
+- crd_v1_raytracker.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

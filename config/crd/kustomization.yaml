@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/crd.devops.toolbox_podtrackers.yaml
+- bases/crd.devops.toolbox_raytrackers.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

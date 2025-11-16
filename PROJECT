@@ -18,4 +18,13 @@ resources:
   kind: PodTracker
   path: devops.toolbox/controller/api/v1
   version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: devops.toolbox
+  group: crd
+  kind: RayTracker
+  path: devops.toolbox/controller/api/v1
+  version: v1
 version: "3"

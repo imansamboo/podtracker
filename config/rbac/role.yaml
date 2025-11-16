@@ -8,6 +8,7 @@ rules:
   - crd.devops.toolbox
   resources:
   - podtrackers
+  - raytrackers
   verbs:
   - create
   - delete
@@ -20,12 +21,14 @@ rules:
   - crd.devops.toolbox
   resources:
   - podtrackers/finalizers
+  - raytrackers/finalizers
   verbs:
   - update
 - apiGroups:
   - crd.devops.toolbox
   resources:
   - podtrackers/status
+  - raytrackers/status
   verbs:
   - get
   - patch
