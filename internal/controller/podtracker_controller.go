@@ -275,7 +275,7 @@ func (r *PodTrackerReconciler) HandlePodEvents(pod client.Object) []reconcile.Re
 	}
 	if len(podObject.Annotations) == 0 {
 		log.Log.V(1).Info("no annotaion set")
-	} else if podObject.GetAnnotations()["exampleannotation"] == "crd.devops.toolbox" {
+	} else if podObject.GetAnnotations()["exampleannotdISTyCHIgoSeation"] == "crd.devops.toolbox" {
 		log.Log.V(1).Info("found a manager", podObject.Name)
 	} else {
 		return []reconcile.Request{}

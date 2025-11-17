@@ -18,8 +18,12 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -47,10 +51,52 @@ type RayTrackerReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.22.1/pkg/reconcile
 func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	_ = logf.FromContext(ctx)
+	var rt crdv1.RayTracker
+	if err := r.Get(ctx, req.NamespacedName, &rt); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+	log.Info("found new ray tracker", "name", rt.Name, "image", rt.Spec.Image+":"+rt.Spec.Versioning)
 
-	// TODO(user): your logic here
+	// If deletion timestamp is set, let ownerReference cleanup handle RayService
+	if !rt.DeletionTimestamp.IsZero() {
+		// Nothing special here: we rely on OwnerReferences and garbage collection.
+		log.Info("RayTracker is being deleted; skipping reconcile")
+		return ctrl.Result{}, nil
+	}
 
+	// 2. Build the RayService object from RayTracker spec
+	raySvc := buildRayService(rt)
+	// ensure same namespace as RayTracker
+	if rt.Namespace != "" {
+		if raySvc.Namespace == "" {
+			raySvc.Namespace = rt.Namespace
+		}
+	}
+
+	// 3. Set owner reference so RayService is garbage-collected with RayTracker
+	if err := ctrl.SetControllerReference(&rt, raySvc, r.Scheme); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	// 4. Apply (Server-Side Apply) the RayService
+	if err := r.applyRayService(ctx, raySvc); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to apply RayService: %w", err)
+	}
+
+	// 5. Annotate RayTracker with last-applied time (safe alternative to status)
+	if rt.Annotations == nil {
+		rt.Annotations = map[string]string{}
+	}
+	rt.Annotations["raytracker.devops.toolbox/last-applied"] = time.Now().UTC().Format(time.RFC3339)
+	if err := r.Update(ctx, &rt); err != nil {
+		// Non-fatal: log and requeue
+		log.Error(err, "failed to update RayTracker annotation")
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	log.Info("RayService applied/updated successfully", "rayService", raySvc.Name)
 	return ctrl.Result{}, nil
 }
 
@@ -58,6 +104,16 @@ func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *RayTrackerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&crdv1.RayTracker{}).
+		Owns(&rayv1.RayService{}).
 		Named("raytracker").
 		Complete(r)
+}
+
+func (r *RayTrackerReconciler) applyRayService(ctx context.Context, svc *rayv1.RayService) error {
+	svc.SetGroupVersionKind(rayv1.SchemeGroupVersion.WithKind("RayService"))
+
+	return r.Patch(ctx, svc, client.Apply, &client.PatchOptions{
+		FieldManager: "raytracker-controller",
+		Force:        pointer.Bool(true),
+	})
 }
