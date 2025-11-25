@@ -37,6 +37,7 @@ import (
 
 	crdv1 "devops.toolbox/controller/api/v1"
 	"devops.toolbox/controller/internal/controller"
+	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -49,6 +50,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(crdv1.AddToScheme(scheme))
+	_ = rayv1.AddToScheme(scheme)
 	// +kubebuilder:scaffold:scheme
 }
 
