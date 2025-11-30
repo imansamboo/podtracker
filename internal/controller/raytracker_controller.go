@@ -27,9 +27,12 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	crdv1 "devops.toolbox/controller/api/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // RayTrackerReconciler reconciles a RayTracker object
@@ -37,6 +40,8 @@ type RayTrackerReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
+
+const rayTrackerFinalizer = "raytracker.devops.toolbox/finalizer"
 
 // +kubebuilder:rbac:groups=crd.devops.toolbox,resources=raytrackers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=crd.devops.toolbox,resources=raytrackers/status,verbs=get;update;patch
@@ -59,12 +64,38 @@ func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	log.Info("found new ray tracker", "name", rt.Name, "image", rt.Spec.Image+":"+rt.Spec.Versioning)
-
+	// ✅ Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(&rt, rayTrackerFinalizer) {
+		controllerutil.AddFinalizer(&rt, rayTrackerFinalizer)
+		if err := r.Update(ctx, &rt); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	// If deletion timestamp is set, let ownerReference cleanup handle RayService
 	if !rt.DeletionTimestamp.IsZero() {
-		// Nothing special here: we rely on OwnerReferences and garbage collection.
-		log.Info("RayTracker is being deleted; skipping reconcile")
-		_ = sendStatusToGin(rt.Spec.Token, "DELETED")
+		log.Info("RayTracker deletion detected, deleting RayCluster")
+
+		// ✅ Find related RayCluster
+		var rcList rayv1.RayClusterList
+		if err := r.List(ctx, &rcList, client.InNamespace(rt.Namespace)); err == nil {
+			for _, rc := range rcList.Items {
+				if metav1.IsControlledBy(&rc, &rt) {
+					log.Info("Deleting RayCluster", "name", rc.Name)
+
+					_ = r.Delete(ctx, &rc)
+
+					// ✅ Notify Gin
+					_ = sendStatusToGin(rt.Spec.Token, "DELETED")
+				}
+			}
+		}
+
+		// ✅ Remove finalizer to allow real deletion
+		controllerutil.RemoveFinalizer(&rt, rayTrackerFinalizer)
+		if err := r.Update(ctx, &rt); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		return ctrl.Result{}, nil
 	}
 
