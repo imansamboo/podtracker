@@ -23,6 +23,7 @@ import (
 
 	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,6 +64,7 @@ func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if !rt.DeletionTimestamp.IsZero() {
 		// Nothing special here: we rely on OwnerReferences and garbage collection.
 		log.Info("RayTracker is being deleted; skipping reconcile")
+		_ = sendStatusToGin(rt.Spec.Token, "DELETED")
 		return ctrl.Result{}, nil
 	}
 
@@ -84,6 +86,11 @@ func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := r.applyRayService(ctx, raySvc); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to apply RayService: %w", err)
 	}
+	err := sendStatusToGin(rt.Spec.Token, "CREATED")
+	if err != nil {
+		log.Error(err, "failed to send CREATED status to gin")
+		// Do NOT return error — avoid infinite reconcile loop
+	}
 
 	// 5. Annotate RayTracker with last-applied time (safe alternative to status)
 	if rt.Annotations == nil {
@@ -97,6 +104,15 @@ func (r *RayTrackerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	log.Info("RayService applied/updated successfully", "rayService", raySvc.Name)
+	var raySvcLive rayv1.RayService
+	err = r.Get(ctx, types.NamespacedName{
+		Name: raySvc.Name, Namespace: raySvc.Namespace,
+	}, &raySvcLive)
+	if err == nil {
+		sendStatusToGin(rt.Spec.Token, string(raySvcLive.Status.ServiceStatus))
+	} else {
+		log.Info("could not get sttaus of ray service", "rayService", raySvc.Name, "error", err.Error())
+	}
 	return ctrl.Result{}, nil
 }
 
