@@ -1,4 +1,4 @@
-kubectl apply -f - <<'EOF'
+kubectl apply --kubeconfig=/home/iman/Documents/projects/faimodel/crd/debug.yaml -f - <<'EOF'
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

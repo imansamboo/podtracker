@@ -19,27 +19,35 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
+
+	"k8s.io/client-go/tools/clientcmd"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"k8s.io/apimachinery/pkg/runtime"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
+
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	crdv1 "devops.toolbox/controller/api/v1"
 	"devops.toolbox/controller/internal/controller"
+
 	rayv1 "github.com/ray-project/kuberay/ray-operator/apis/ray/v1"
-	// +kubebuilder:scaffold:imports
 )
+
+// +kubebuilder:scaffold:imports
 
 var (
 	scheme   = runtime.NewScheme()
@@ -155,8 +163,13 @@ func main() {
 		metricsServerOptions.CertName = metricsCertName
 		metricsServerOptions.KeyName = metricsCertKey
 	}
+	kubeconfigPath := "/home/iman/Documents/projects/faimodel/crd/debug.yaml" // path to your mounted kubeconfig
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		panic(fmt.Sprintf("unable to load kubeconfig: %v", err))
+	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,

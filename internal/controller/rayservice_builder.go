@@ -36,17 +36,7 @@ applications:
   - name: text_ml_app
     import_path: text_ml:app
     route_prefix: /summarize_translate
-    deployments:
-      - name: Translator
-        num_replicas: 1
-        ray_actor_options:
-          num_cpus: 0.1
-        user_config:
-          language: french
-      - name: Summarizer
-        num_replicas: 1
-        ray_actor_options:
-          num_cpus: 0.1
+
 `,
 
 			// ============================
@@ -104,8 +94,8 @@ applications:
 										Image: rt.Spec.Image,
 										Resources: corev1.ResourceRequirements{
 											Requests: corev1.ResourceList{
-												corev1.ResourceCPU:    resource.MustParse("500m"),
-												corev1.ResourceMemory: resource.MustParse("2Gi"),
+												corev1.ResourceCPU:    resource.MustParse("1"),
+												corev1.ResourceMemory: resource.MustParse("1Gi"),
 											},
 											Limits: corev1.ResourceList{
 												corev1.ResourceCPU:    resource.MustParse("1"),
