@@ -11,22 +11,16 @@ import (
 )
 
 func buildRayService(rt crdv1.RayTracker) *rayv1.RayService {
-
 	return &rayv1.RayService{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "ray.io/v1",
 			Kind:       "RayService",
 		},
-
 		ObjectMeta: metav1.ObjectMeta{
 			Name: rt.Spec.Name,
 		},
-
 		Spec: rayv1.RayServiceSpec{
 
-			// ============================
-			// serveConfigV2 (YAML block)
-			// ============================
 			ServeConfigV2: `
 proxy_location: EveryNode
 http_options:
@@ -35,31 +29,27 @@ http_options:
 applications:
   - name: text_ml_app
     import_path: text_ml:app
-    route_prefix: /summarize_translate
-
+    route_prefix: /tinylama
+    deployments:
+      - name: LLMDeployment
+        num_replicas: 1
+        ray_actor_options:
+          num_cpus: 0.1
 `,
 
-			// ============================
-			// RayClusterSpec
-			// ============================
 			RayClusterSpec: rayv1.RayClusterSpec{
-
-				// version from CR (rt.Spec.Versioning or Image tag)
 				RayVersion: rt.Spec.Versioning,
 
-				// -------- HEAD GROUP --------
 				HeadGroupSpec: rayv1.HeadGroupSpec{
-
 					RayStartParams: map[string]string{
 						"num-cpus": "0",
 					},
-
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
 									Name:  "ray-head",
-									Image: rt.Spec.Image, // from CR
+									Image: rt.Spec.Image,
 									Resources: corev1.ResourceRequirements{
 										Requests: corev1.ResourceList{
 											corev1.ResourceCPU:    resource.MustParse("1"),
@@ -76,7 +66,6 @@ applications:
 					},
 				},
 
-				// -------- WORKER GROUP --------
 				WorkerGroupSpecs: []rayv1.WorkerGroupSpec{
 					{
 						GroupName:   "small-group",
@@ -94,8 +83,8 @@ applications:
 										Image: rt.Spec.Image,
 										Resources: corev1.ResourceRequirements{
 											Requests: corev1.ResourceList{
-												corev1.ResourceCPU:    resource.MustParse("1"),
-												corev1.ResourceMemory: resource.MustParse("1Gi"),
+												corev1.ResourceCPU:    resource.MustParse("500m"),
+												corev1.ResourceMemory: resource.MustParse("2Gi"),
 											},
 											Limits: corev1.ResourceList{
 												corev1.ResourceCPU:    resource.MustParse("1"),
