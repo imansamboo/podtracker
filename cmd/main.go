@@ -163,7 +163,7 @@ func main() {
 		metricsServerOptions.CertName = metricsCertName
 		metricsServerOptions.KeyName = metricsCertKey
 	}
-	kubeconfigPath := "/home/iman/Documents/projects/faimodel/crd/debug.yaml" // path to your mounted kubeconfig
+	kubeconfigPath := os.Getenv("KUBE_CONFIG_PATH") // path to your mounted kubeconfig
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		panic(fmt.Sprintf("unable to load kubeconfig: %v", err))
