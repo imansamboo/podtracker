@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"time"
@@ -323,10 +324,22 @@ type TokenState struct {
 	Status string `json:"status" example:"active"`
 }
 
+func getGinBaseUrl() string {
+	// preferred: explicit env var
+	if url := os.Getenv("GIN_BASE_URL"); url != "" {
+		return url
+	}
+	return "http://127.0.0.1:5000"
+
+	// default for in-cluster Kubernetes
+	// return "http://gin-service.default.svc.cluster.local:5000/update-state"
+
+}
+
 func sendStatusToGin(token, status string) error {
-	url := "http://gin-service.default.svc.cluster.local:5000/update-state" // use k8s service name in-cluster
-	url = "http://192.168.49.2:30056/update-state"
-	url = "http://127.0.0.1:5000/update-state"
+	// url := "http://gin-service.default.svc.cluster.local:5000/update-state" // use k8s service name in-cluster
+	// url = "http://192.168.49.2:30056/update-state"
+	url := fmt.Sprintf("%s//update-state", getGinBaseUrl())
 	payload := TokenState{
 		Token:  token,
 		Status: status,
