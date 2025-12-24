@@ -24,7 +24,7 @@ build-image:
   before_script:
   script:
     - echo "Building image faimodel:" "$DOCKER_IMAGE"
-    - docker build -f ./backend/Dockerfile.Deploy -t $DOCKER_IMAGE ./backend
+    - docker build -f ./Dockerfile.Deploy -t $DOCKER_IMAGE .
     - echo "Push image:"
     - docker push $DOCKER_IMAGE
 
